@@ -1,18 +1,33 @@
-use std::io;
 use std::fs::{self};
+use std::io;
 use std::path::Path;
 
-fn main() {
-    let path = ".";
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    DefaultTerminal, Frame,
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    symbols::border,
+    text::{Line, Text},
+    widgets::{Block, Paragraph, Widget},
+};
 
-    println!("--- Calculating file sizes in directory: {} ---", path);
+fn main() -> io::Result<()> {
+    // let path = ".";
 
-    let mut size: i64 = 0;
+    // println!("--- Calculating file sizes in directory: {} ---", path);
 
-    match calculate_directory_size(Path::new(path), &mut size) {
-        Ok(()) => println!("\nTotal size of files: {}", format_size(size.clone())),
-        Err(e) => eprintln!("\nError reading directory: {}", e),
-    };
+    // let mut size: i64 = 0;
+
+    // match calculate_directory_size(Path::new(path), &mut size) {
+    //     Ok(()) => println!("\nTotal size of files: {}", format_size(size.clone())),
+    //     Err(e) => eprintln!("\nError reading directory: {}", e),
+    // };
+    let mut terminal = ratatui::init();
+    let result = App::default().run(&mut terminal);
+    ratatui::restore();
+    result
 }
 
 fn calculate_directory_size(dir: &Path, size: &mut i64) -> io::Result<()> {
@@ -44,5 +59,106 @@ fn format_size(size: i64) -> String {
         format!("{:.2} MB", size as f64 / (1024.0 * 1024.0))
     } else {
         format!("{:.2} GB", size as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct App {
+    path: String,
+    tree: Vec<String>,
+    exit: bool,
+}
+
+impl App {
+    /// runs the application's main loop until the user quits
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        self.path = ".".to_owned();
+        self.tree = vec![];
+
+        let binding = self.path.clone();
+        let value = binding.as_str();
+        let dir = Path::new(&value);
+
+        self.generate_filetree(dir)?;
+
+        while !self.exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            self.handle_events()?;
+        }
+
+        Ok(())
+    }
+
+    fn draw(&self, frame: &mut Frame) {
+        frame.render_widget(self, frame.area());
+    }
+
+    /// updates the application's state based on user input
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            // it's important to check that the event is a key press event as
+            // crossterm also emits key release and repeat events on Windows.
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Up => self.exit(),
+            KeyCode::Down => self.exit(),
+            KeyCode::Enter => self.exit(),
+            KeyCode::Char('q') => self.exit(),
+            _ => {}
+        }
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+
+    fn generate_filetree(&mut self, dir: &Path) -> io::Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let filename = entry.file_name();
+
+                if entry.path().is_dir() {
+                    self.tree.push(filename.to_string_lossy().yellow().to_string());
+                } else {
+                    self.tree.push(filename.to_string_lossy().to_string());
+                }
+            }
+
+            self.tree.sort();
+        }
+        Ok(())
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let title = Line::from(" Counter App Tutorial ".bold());
+        let instructions = Line::from(vec![
+            " Up ".into(),
+            "<Up>".blue().bold(),
+            " Down ".into(),
+            "<Down>".blue().bold(),
+            " Calculate Size ".into(),
+            "<Enter>".blue().bold(),
+            " Quit ".into(),
+            "<Q> ".blue().bold(),
+        ]);
+        let block = Block::bordered()
+            .title(title.centered())
+            .title_bottom(instructions.centered())
+            .border_set(border::THICK);
+
+        let text = Text::from(self.tree.join("\n"));
+
+        Paragraph::new(text).block(block).render(area, buf);
     }
 }
