@@ -50,6 +50,18 @@ fn calculate_directory_size(dir: &Path, size: &mut i64) -> io::Result<()> {
     Ok(())
 }
 
+fn calculate_file_size(file_path: &Path) -> io::Result<i64> {
+    if file_path.is_file() {
+        let metadata = fs::metadata(file_path)?;
+        Ok(metadata.len() as i64)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "File not found",
+        ))
+    }
+}
+
 fn format_size(size: i64) -> String {
     if size < 1024 {
         format!("{} bytes", size)
@@ -172,7 +184,14 @@ impl Widget for &App {
         });
 
         self.tree_files.iter().for_each(|s| {
-            lines.push(Line::from(s.as_str()).green());
+            let size = calculate_file_size(Path::new(s.as_str())).or_else(|e| {
+                eprintln!("Error reading file {}: {}", s, e);
+                Ok::<i64, io::Error>(-1)
+            }).unwrap_or(-1);
+
+            let formatted_size = format_size(size);
+
+            lines.push(Line::from(format!("{} - {}", s, formatted_size)).green());
         });
 
         let text = Text::from(lines);
