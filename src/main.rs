@@ -1,6 +1,6 @@
 use std::fs::{self};
-use std::io;
 use std::path::Path;
+use std::{io, vec};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -65,7 +65,8 @@ fn format_size(size: i64) -> String {
 #[derive(Debug, Default)]
 pub struct App {
     path: String,
-    tree: Vec<String>,
+    tree_dirs: Vec<String>,
+    tree_files: Vec<String>,
     exit: bool,
 }
 
@@ -73,7 +74,8 @@ impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.path = ".".to_owned();
-        self.tree = vec![];
+        self.tree_dirs = vec![];
+        self.tree_files = vec![];
 
         let binding = self.path.clone();
         let value = binding.as_str();
@@ -122,18 +124,24 @@ impl App {
 
     fn generate_filetree(&mut self, dir: &Path) -> io::Result<()> {
         if dir.is_dir() {
+            let mut directories: Vec<String> = vec![];
+            let mut files: Vec<String> = vec![];
+
             for entry in fs::read_dir(dir)? {
                 let entry = entry?;
                 let filename = entry.file_name();
 
                 if entry.path().is_dir() {
-                    self.tree.push(filename.to_string_lossy().yellow().to_string());
+                    directories.push(filename.to_string_lossy().to_string());
+                    self.tree_dirs.push(filename.to_string_lossy().to_string());
                 } else {
-                    self.tree.push(filename.to_string_lossy().to_string());
+                    files.push(filename.to_string_lossy().to_string());
+                    self.tree_files.push(filename.to_string_lossy().to_string());
                 }
             }
 
-            self.tree.sort();
+            self.tree_dirs.sort();
+            self.tree_files.sort();
         }
         Ok(())
     }
@@ -157,7 +165,17 @@ impl Widget for &App {
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
 
-        let text = Text::from(self.tree.join("\n"));
+        let mut lines: Vec<Line> = vec![];
+
+        self.tree_dirs.iter().for_each(|s| {
+            lines.push(Line::from(s.as_str()).yellow().bold());
+        });
+
+        self.tree_files.iter().for_each(|s| {
+            lines.push(Line::from(s.as_str()).green());
+        });
+
+        let text = Text::from(lines);
 
         Paragraph::new(text).block(block).render(area, buf);
     }
